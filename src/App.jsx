@@ -5,6 +5,7 @@ import Spinner from './components/Spinner.jsx'
 import MovieCard from './components/MovieCard.jsx'
 import { useDebounce } from 'react-use'
 import { getTrendingMovies, updateSearchCount } from './appwrite.js'
+import PropTypes from 'prop-types'
 
 const API_BASE_URL = 'https://api.themoviedb.org/3'
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY
@@ -17,39 +18,51 @@ const API_OPTIONS = {
   },
 }
 
-// Handles missing or invalid trending movie posters
-const TrendingPoster = ({ movie }) => {
+// Displays a trending poster when available, otherwise a decorative fallback.
+const TrendingPoster = ({ movie, fallback = '🎬' }) => {
   const [imageFailed, setImageFailed] = useState(false)
 
   const poster =
-    movie.poster_url || movie.posterUrl || movie.poster_path
+    movie.poster_url || movie.posterUrl || movie.poster_path || ''
 
-  const posterUrl = poster
-    ? poster.startsWith('http')
-      ? poster
-      : `https://image.tmdb.org/t/p/w342/${poster.replace(/^\/+/, '')}`
-    : ''
+  const posterUrl =
+    typeof poster === 'string' && poster.trim()
+      ? poster.startsWith('http')
+        ? poster
+        : `https://image.tmdb.org/t/p/w342/${poster.replace(/^\/+/, '')}`
+      : ''
 
   if (!posterUrl || imageFailed) {
     return (
-      <div
-        className="trend-poster-fallback"
-        role="img"
-        aria-label={`Poster unavailable for ${movie.title || 'movie'}`}
-      >
-        🎬
+      <div className="trend-poster-fallback" aria-hidden="true">
+        {fallback}
       </div>
     )
   }
 
   return (
     <img
+      className="trend-poster"
       src={posterUrl}
       alt={movie.title || 'Trending movie poster'}
       loading="lazy"
       onError={() => setImageFailed(true)}
     />
   )
+}
+
+TrendingPoster.propTypes = {
+  movie: PropTypes.shape({
+    poster_url: PropTypes.string,
+    posterUrl: PropTypes.string,
+    poster_path: PropTypes.string,
+    title: PropTypes.string,
+  }).isRequired,
+  fallback: PropTypes.string,
+}
+
+TrendingPoster.defaultProps = {
+  fallback: '🎬',
 }
 
 const App = () => {
@@ -76,9 +89,7 @@ const App = () => {
       const response = await fetch(endpoint, API_OPTIONS)
 
       if (!response.ok) {
-        throw new Error(
-          `TMDB request failed with status ${response.status}`
-        )
+        throw new Error(`TMDB request failed with status ${response.status}`)
       }
 
       const data = await response.json()
@@ -107,9 +118,10 @@ const App = () => {
   const loadTrendingMovies = async () => {
     try {
       const movies = await getTrendingMovies()
-      setTrendingMovies(movies || [])
+      setTrendingMovies(Array.isArray(movies) ? movies : [])
     } catch (error) {
       console.error('Error fetching trending movies:', error)
+      setTrendingMovies([])
     }
   }
 
@@ -124,6 +136,31 @@ const App = () => {
   const handleRetry = () => {
     fetchMovies(debouncedSearchTerm)
   }
+
+  // These three cards are UI-only placeholders.
+  // They appear whenever Appwrite has no trending records.
+  const showDecorativeCards = trendingMovies.length === 0
+
+  const decorativeMovies = [
+    {
+      id: 'discover',
+      title: 'Popular Movies',
+      label: 'DISCOVER',
+      icon: '🎬',
+    },
+    {
+      id: 'favorites',
+      title: 'Fan Favorites',
+      label: 'EXPLORE',
+      icon: '🍿',
+    },
+    {
+      id: 'next-watch',
+      title: 'Movies to Discover',
+      label: 'YOUR NEXT WATCH',
+      icon: '⭐',
+    },
+  ]
 
   return (
     <main className="app">
@@ -165,38 +202,60 @@ const App = () => {
           </div>
         </header>
 
-        {trendingMovies.length > 0 && (
-          <section className="trending">
-            <div className="section-heading">
-              <div>
-                <p className="section-kicker">
-                  WHAT PEOPLE ARE SEARCHING
-                </p>
-                <h2>Trending Searches</h2>
-              </div>
-              <span className="section-tag">POPULAR</span>
+        {/* Always show Trending Searches */}
+        <section className="trending">
+          <div className="section-heading">
+            <div>
+              <p className="section-kicker">
+                WHAT PEOPLE ARE SEARCHING
+              </p>
+              <h2>Trending Searches</h2>
             </div>
 
-            <ul>
-              {trendingMovies.map((movie, index) => (
-                <li key={movie.$id || `${movie.title}-${index}`}>
-                  <span className="trend-number">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
+            <span className="section-tag">
+              {showDecorativeCards ? 'DISCOVER' : 'POPULAR'}
+            </span>
+          </div>
 
-                  <TrendingPoster movie={movie} />
+          <ul>
+            {showDecorativeCards
+              ? decorativeMovies.map((movie, index) => (
+                  <li key={movie.id}>
+                    <span className="trend-number">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
 
-                  <div className="trend-info">
-                    <span>TRENDING</span>
-                    <p title={movie.title}>
-                      {movie.title || 'Untitled movie'}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+                    <div
+                      className="trend-poster-fallback"
+                      aria-hidden="true"
+                    >
+                      {movie.icon}
+                    </div>
+
+                    <div className="trend-info">
+                      <span>{movie.label}</span>
+                      <p title={movie.title}>{movie.title}</p>
+                    </div>
+                  </li>
+                ))
+              : trendingMovies.map((movie, index) => (
+                  <li key={movie.$id || `${movie.title}-${index}`}>
+                    <span className="trend-number">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
+
+                    <TrendingPoster movie={movie} />
+
+                    <div className="trend-info">
+                      <span>TRENDING</span>
+                      <p title={movie.title}>
+                        {movie.title || 'Untitled movie'}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+          </ul>
+        </section>
 
         <section className="all-movies">
           <div className="section-heading">
@@ -231,6 +290,7 @@ const App = () => {
               <span className="state-icon">!</span>
               <h3>Movies are taking a break</h3>
               <p>{errorMessage}</p>
+
               <button
                 className="retry-button"
                 type="button"

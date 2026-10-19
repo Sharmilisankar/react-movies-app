@@ -357,34 +357,34 @@ main {
 }
 
 .trend-number {
+  flex-shrink: 0;
   color: var(--accent);
   font-family: "Manrope", sans-serif;
   font-size: 1.25rem;
   font-weight: 800;
 }
 
-.trending ul li img {
+.trending ul li .trend-poster,
+.trending ul li .trend-poster-fallback {
   flex: 0 0 59px;
   width: 59px;
   height: 80px;
   border-radius: 8px;
+}
+
+.trending ul li .trend-poster {
   object-fit: cover;
   background: #1b2d32;
 }
 
-
 .trending ul li .trend-poster-fallback {
   display: grid;
-  flex: 0 0 59px;
-  width: 59px;
-  height: 80px;
+  flex-shrink: 0;
   place-items: center;
-  border-radius: 8px;
   background: #1b2d32;
-  color: #55e6c1;
+  color: var(--accent);
   font-size: 1.5rem;
 }
-
 
 .trend-info {
   min-width: 0;
@@ -427,7 +427,10 @@ main {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: linear-gradient(155deg, #12232a, #0d191f);
-  transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+  transition:
+    transform 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease;
 }
 
 .movie-card:hover {
