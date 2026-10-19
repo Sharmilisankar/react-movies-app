@@ -17,6 +17,41 @@ const API_OPTIONS = {
   },
 }
 
+// Handles missing or invalid trending movie posters
+const TrendingPoster = ({ movie }) => {
+  const [imageFailed, setImageFailed] = useState(false)
+
+  const poster =
+    movie.poster_url || movie.posterUrl || movie.poster_path
+
+  const posterUrl = poster
+    ? poster.startsWith('http')
+      ? poster
+      : `https://image.tmdb.org/t/p/w342/${poster.replace(/^\/+/, '')}`
+    : ''
+
+  if (!posterUrl || imageFailed) {
+    return (
+      <div
+        className="trend-poster-fallback"
+        role="img"
+        aria-label={`Poster unavailable for ${movie.title || 'movie'}`}
+      >
+        🎬
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={posterUrl}
+      alt={movie.title || 'Trending movie poster'}
+      loading="lazy"
+      onError={() => setImageFailed(true)}
+    />
+  )
+}
+
 const App = () => {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
@@ -99,7 +134,9 @@ const App = () => {
           <div className="brand">
             <span className="brand-mark">C</span>
             <span className="brand-name">CineScope</span>
-            <span className="brand-caption">YOUR MOVIE DISCOVERY SPACE</span>
+            <span className="brand-caption">
+              YOUR MOVIE DISCOVERY SPACE
+            </span>
           </div>
 
           <div className="hero-content">
@@ -132,7 +169,9 @@ const App = () => {
           <section className="trending">
             <div className="section-heading">
               <div>
-                <p className="section-kicker">WHAT PEOPLE ARE SEARCHING</p>
+                <p className="section-kicker">
+                  WHAT PEOPLE ARE SEARCHING
+                </p>
                 <h2>Trending Searches</h2>
               </div>
               <span className="section-tag">POPULAR</span>
@@ -145,15 +184,13 @@ const App = () => {
                     {String(index + 1).padStart(2, '0')}
                   </span>
 
-                  <img
-                    src={movie.poster_url}
-                    alt={movie.title || 'Trending movie poster'}
-                    loading="lazy"
-                  />
+                  <TrendingPoster movie={movie} />
 
                   <div className="trend-info">
                     <span>TRENDING</span>
-                    <p title={movie.title}>{movie.title}</p>
+                    <p title={movie.title}>
+                      {movie.title || 'Untitled movie'}
+                    </p>
                   </div>
                 </li>
               ))}

@@ -372,6 +372,20 @@ main {
   background: #1b2d32;
 }
 
+
+.trending ul li .trend-poster-fallback {
+  display: grid;
+  flex: 0 0 59px;
+  width: 59px;
+  height: 80px;
+  place-items: center;
+  border-radius: 8px;
+  background: #1b2d32;
+  color: #55e6c1;
+  font-size: 1.5rem;
+}
+
+
 .trend-info {
   min-width: 0;
 }
