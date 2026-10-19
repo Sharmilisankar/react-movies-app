@@ -48,7 +48,8 @@ export const updateSearchCount = async (searchTerm, movie) => {
         tableId: TABLE_ID,
         rowId: ID.unique(),
         data: {
-          searchTerm,
+          searchTerm: searchTerm,
+            title: movie.title,
           count: 1,
           movie_id: movie.id,
           poster_url: movie.poster_path

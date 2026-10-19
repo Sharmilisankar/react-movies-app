@@ -234,7 +234,9 @@ const App = () => {
 
                     <div className="trend-info">
                       <span>{movie.label}</span>
-                      <p title={movie.title}>{movie.title}</p>
+                      <p title={movie.title || movie.name || movie.movie_title}>
+                        {movie.title || movie.name || movie.movie_title || 'Movie title unavailable'}
+                      </p>
                     </div>
                   </li>
                 ))
