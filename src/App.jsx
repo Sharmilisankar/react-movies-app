@@ -8,8 +8,9 @@ import { getTrendingMovies, updateSearchCount } from "./appwrite.js";
 import PropTypes from "prop-types";
 
 const API_BASE_URL = "https://api.themoviedb.org/3";
-const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 const IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w342";
+const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
+const TRENDING_CACHE_KEY = "cinescope_trending_movies";
 
 const API_OPTIONS = {
   method: "GET",
@@ -19,10 +20,21 @@ const API_OPTIONS = {
   },
 };
 
+const readTrendingCache = () => {
+  try {
+    const cached = localStorage.getItem(TRENDING_CACHE_KEY);
+    const movies = cached ? JSON.parse(cached) : [];
+    return Array.isArray(movies) ? movies : [];
+  } catch {
+    return [];
+  }
+};
+
 const TrendingPoster = ({ movie }) => {
   const [imageFailed, setImageFailed] = useState(false);
 
-  const poster = movie.poster_url || movie.posterUrl || movie.poster_path || "";
+  const poster =
+    movie.poster_url || movie.posterUrl || movie.poster_path || "";
 
   const posterUrl = poster
     ? poster.startsWith("http")
@@ -42,8 +54,9 @@ const TrendingPoster = ({ movie }) => {
     <img
       className="trend-poster"
       src={posterUrl}
-      alt={`${movie.title || "Movie"} poster`}
+      alt={`${movie.title || movie.searchTerm || "Movie"} poster`}
       loading="lazy"
+      decoding="async"
       onError={() => setImageFailed(true)}
     />
   );
@@ -55,8 +68,30 @@ TrendingPoster.propTypes = {
     posterUrl: PropTypes.string,
     poster_path: PropTypes.string,
     title: PropTypes.string,
+    searchTerm: PropTypes.string,
   }).isRequired,
 };
+
+const decorativeMovies = [
+  {
+    id: "discover",
+    title: "Popular Movies",
+    label: "DISCOVER",
+    icon: "🎬",
+  },
+  {
+    id: "favorites",
+    title: "Fan Favorites",
+    label: "EXPLORE",
+    icon: "🍿",
+  },
+  {
+    id: "next-watch",
+    title: "Movies to Discover",
+    label: "YOUR NEXT WATCH",
+    icon: "⭐",
+  },
+];
 
 const App = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -64,76 +99,104 @@ const App = () => {
   const [movieList, setMovieList] = useState([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [trendingMovies, setTrendingMovies] = useState([]);
-  const [trendingLoading, setTrendingLoading] = useState(true);
+
+  // Read cached trending results immediately.
+  const [trendingMovies, setTrendingMovies] = useState(readTrendingCache);
+  const [trendingLoading, setTrendingLoading] = useState(
+    () => readTrendingCache().length === 0
+  );
 
   useDebounce(() => {
     setDebouncedSearchTerm(searchTerm.trim());
   }, 500, [searchTerm]);
 
+  // Refresh from Appwrite without hiding already displayed results.
   const loadTrendingMovies = useCallback(async () => {
-    setTrendingLoading(true);
-
     try {
       const movies = await getTrendingMovies();
-      setTrendingMovies(Array.isArray(movies) ? movies.slice(0, 5) : []);
+
+      // A null result means Appwrite failed; preserve cached data.
+      if (!Array.isArray(movies)) {
+        return;
+      }
+
+      setTrendingMovies(movies.slice(0, 5));
+
+      try {
+        localStorage.setItem(
+          TRENDING_CACHE_KEY,
+          JSON.stringify(movies.slice(0, 5))
+        );
+      } catch {
+        // The app still works if browser storage is unavailable.
+      }
     } catch (error) {
       console.error("Error fetching trending movies:", error);
-      setTrendingMovies([]);
     } finally {
       setTrendingLoading(false);
     }
   }, []);
 
-  const fetchMovies = useCallback(async (query = "") => {
-    setIsLoading(true);
-    setErrorMessage("");
-
-    try {
-      if (!API_KEY) {
-        throw new Error(
-          "TMDB API key is missing. Check VITE_TMDB_API_KEY in your .env file."
-        );
-      }
-
-      const endpoint = query
-        ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}&include_adult=false`
-        : `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
-
-      const response = await fetch(endpoint, API_OPTIONS);
-
-      if (!response.ok) {
-        const details = await response.text();
-        console.error("TMDB response:", details);
-        throw new Error(`TMDB request failed (${response.status}).`);
-      }
-
-      const data = await response.json();
-      const results = Array.isArray(data.results) ? data.results : [];
-
-      setMovieList(results);
-
-      if (query && results.length > 0) {
-        // Record the first matching movie for this search term.
-        await updateSearchCount(query, results[0]);
-
-        // Refresh Trending so new searches can appear immediately.
-        await loadTrendingMovies();
-      }
-    } catch (error) {
-      console.error("Error fetching movies:", error);
-
-      setErrorMessage(
-        error.message?.includes("API key")
-          ? error.message
-          : "We could not load movies. Check your TMDB API key, connection, and browser console, then try again."
-      );
-
-      setMovieList([]);
-    } finally {
-      setIsLoading(false);
-    }
+  // Load trending data on the first page visit.
+  useEffect(() => {
+    loadTrendingMovies();
   }, [loadTrendingMovies]);
+
+  const fetchMovies = useCallback(
+    async (query = "") => {
+      setIsLoading(true);
+      setErrorMessage("");
+
+      try {
+        if (!API_KEY) {
+          throw new Error(
+            "TMDB API key is missing. Check VITE_TMDB_API_KEY in your .env file."
+          );
+        }
+
+        const endpoint = query
+          ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(
+              query
+            )}&include_adult=false`
+          : `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
+
+        const response = await fetch(endpoint, API_OPTIONS);
+
+        if (!response.ok) {
+          const details = await response.text();
+          console.error("TMDB response:", details);
+          throw new Error(`TMDB request failed (${response.status}).`);
+        }
+
+        const data = await response.json();
+        const results = Array.isArray(data.results) ? data.results : [];
+
+        setMovieList(results);
+
+        // Do not make the user wait for Appwrite to save the search.
+        if (query && results.length > 0) {
+          void updateSearchCount(query, results[0]).then((saved) => {
+            if (saved) {
+              void loadTrendingMovies();
+            }
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching movies:", error);
+
+        setErrorMessage(
+          error.message?.includes("API key")
+            ? error.message
+            : "We could not load movies. Check your TMDB API key, connection, and browser console, then try again."
+        );
+
+        setMovieList([]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadTrendingMovies]
+  );
 
   useEffect(() => {
     fetchMovies(debouncedSearchTerm);
@@ -142,17 +205,6 @@ const App = () => {
   const handleRetry = () => {
     fetchMovies(debouncedSearchTerm);
   };
-
-  const decorativeMovies = [
-    { id: "discover", title: "Popular Movies", label: "DISCOVER", icon: "🎬" },
-    { id: "favorites", title: "Fan Favorites", label: "EXPLORE", icon: "🍿" },
-    {
-      id: "next-watch",
-      title: "Movies to Discover",
-      label: "YOUR NEXT WATCH",
-      icon: "⭐",
-    },
-  ];
 
   const showDecorativeCards = trendingMovies.length === 0;
 
@@ -212,47 +264,54 @@ const App = () => {
             </span>
           </div>
 
-          {trendingLoading ? (
+          {trendingLoading && showDecorativeCards ? (
             <div className="state-panel">
               <p>Loading trending searches...</p>
             </div>
           ) : (
             <ul>
-              {(showDecorativeCards ? decorativeMovies : trendingMovies).map(
-                (movie, index) => (
-                  <li
-                    key={
-                      movie.$id ||
-                      movie.id ||
-                      movie.movie_id ||
-                      `${movie.title}-${index}`
-                    }
-                  >
-                    <span className="trend-number">
-                      {String(index + 1).padStart(2, "0")}
+              {(showDecorativeCards
+                ? decorativeMovies
+                : trendingMovies
+              ).map((movie, index) => (
+                <li
+                  key={
+                    movie.$id ||
+                    movie.id ||
+                    movie.movie_id ||
+                    `${movie.title || movie.searchTerm}-${index}`
+                  }
+                >
+                  <span className="trend-number">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+
+                  {showDecorativeCards ? (
+                    <div
+                      className="trend-poster-fallback"
+                      aria-hidden="true"
+                    >
+                      {movie.icon}
+                    </div>
+                  ) : (
+                    <TrendingPoster movie={movie} />
+                  )}
+
+                  <div className="trend-info">
+                    <span>
+                      {showDecorativeCards
+                        ? movie.label
+                        : `TRENDING · ${Number(movie.count || 0)} SEARCHES`}
                     </span>
 
-                    {showDecorativeCards ? (
-                      <div className="trend-poster-fallback" aria-hidden="true">
-                        {movie.icon}
-                      </div>
-                    ) : (
-                      <TrendingPoster movie={movie} />
-                    )}
-
-                    <div className="trend-info">
-                      <span>
-                        {showDecorativeCards
-                          ? movie.label
-                          : `TRENDING · ${Number(movie.count || 0)} SEARCHES`}
-                      </span>
-                      <p title={movie.title || movie.searchTerm}>
-                        {movie.title || movie.searchTerm || "Untitled movie"}
-                      </p>
-                    </div>
-                  </li>
-                )
-              )}
+                    <p title={movie.title || movie.searchTerm}>
+                      {movie.title ||
+                        movie.searchTerm ||
+                        "Untitled movie"}
+                    </p>
+                  </div>
+                </li>
+              ))}
             </ul>
           )}
         </section>
@@ -274,7 +333,9 @@ const App = () => {
             </div>
 
             {!isLoading && !errorMessage && movieList.length > 0 && (
-              <span className="result-count">{movieList.length} titles</span>
+              <span className="result-count">
+                {movieList.length} titles
+              </span>
             )}
           </div>
 

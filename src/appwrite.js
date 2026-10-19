@@ -18,24 +18,33 @@ const validateConfig = () => {
   if (!DATABASE_ID) missing.push("VITE_APPWRITE_DATABASE_ID");
   if (!TABLE_ID) missing.push("VITE_APPWRITE_TABLE_ID");
 
-  if (missing.length) {
+  if (missing.length > 0) {
     throw new Error(
-      `Missing Appwrite configuration: ${missing.join(", ")}. Check your .env file.`
+      `Missing Appwrite configuration: ${missing.join(", ")}`
     );
   }
 };
 
 const getPosterUrl = (movie) => {
-  if (movie?.poster_url) return movie.poster_url;
+  if (movie?.poster_url) {
+    return movie.poster_url;
+  }
 
   if (movie?.poster_path) {
-    return `https://image.tmdb.org/t/p/w500${movie.poster_path}`;
+    if (movie.poster_path.startsWith("http")) {
+      return movie.poster_path;
+    }
+
+    return `https://image.tmdb.org/t/p/w342/${movie.poster_path.replace(
+      /^\/+/,
+      ""
+    )}`;
   }
 
   return "";
 };
 
-// Record each movie search in Appwrite.
+// Save or increment the count for a search term.
 export const updateSearchCount = async (searchTerm, movie) => {
   try {
     validateConfig();
@@ -43,12 +52,9 @@ export const updateSearchCount = async (searchTerm, movie) => {
     const term = searchTerm?.trim();
 
     if (!term || !movie?.id) {
-      console.warn("Skipping search count: search term or movie ID is missing.");
-      return;
+      console.warn("Search count skipped: missing search term or movie ID.");
+      return false;
     }
-
-    const title = movie.title || movie.name || term;
-    const posterUrl = getPosterUrl(movie);
 
     const result = await tablesDB.listRows({
       databaseId: DATABASE_ID,
@@ -59,11 +65,11 @@ export const updateSearchCount = async (searchTerm, movie) => {
       ],
     });
 
+    // Only send attributes that exist in your Appwrite table.
     const movieData = {
       searchTerm: term,
-      title,
       movie_id: Number(movie.id),
-      poster_url: posterUrl,
+      poster_url: getPosterUrl(movie),
     };
 
     if (result.rows.length > 0) {
@@ -89,8 +95,11 @@ export const updateSearchCount = async (searchTerm, movie) => {
         },
       });
     }
+
+    return true;
   } catch (error) {
     console.error("Appwrite search-count error:", error);
+    return false;
   }
 };
 
@@ -108,18 +117,17 @@ export const getTrendingMovies = async () => {
       ],
     });
 
-    const rows = result.rows || [];
-
-    console.log("Trending movies loaded from Appwrite:", rows);
-
-    return rows.map((row) => ({
+    return (result.rows || []).map((row) => ({
       ...row,
-      title: row.title || row.searchTerm || "Unknown movie",
+      // Display a title without requiring a separate title column.
+      title: row.searchTerm || "Unknown movie",
       poster_url: getPosterUrl(row),
       count: Number(row.count || 0),
     }));
   } catch (error) {
     console.error("Appwrite trending movies error:", error);
-    return [];
+
+    // null means the request failed, so existing cached results are preserved.
+    return null;
   }
 };
