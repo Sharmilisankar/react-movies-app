@@ -313,7 +313,17 @@ main {
   font-weight: 700;
 }
 
+
 /* Trending searches */
+
+.trending,
+.all-movies {
+  min-width: 0;
+}
+
+.trending {
+  margin: 0 0 68px;
+}
 
 .trending ul {
   display: flex;
@@ -373,6 +383,7 @@ main {
 }
 
 .trending ul li .trend-poster {
+  display: block;
   object-fit: cover;
   background: #1b2d32;
 }
@@ -387,6 +398,7 @@ main {
 }
 
 .trend-info {
+  flex: 1;
   min-width: 0;
 }
 
@@ -394,7 +406,7 @@ main {
   color: #779b9b;
   font-size: 0.58rem;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
 }
 
 .trend-info p {
@@ -405,7 +417,23 @@ main {
   font-weight: 700;
   line-height: 1.45;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+@media (max-width: 700px) {
+  .trending {
+    margin-bottom: 48px;
+  }
+
+  .trending ul {
+    gap: 11px;
+  }
+
+  .trending ul li {
+    flex-basis: 220px;
+  }
+}
+
 
 /* Movie grid */
 

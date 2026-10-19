@@ -1,61 +1,53 @@
 
-import { useEffect, useState } from 'react'
-import PropTypes from 'prop-types'
-import { useDebounce } from 'react-use'
+import { useCallback, useEffect, useState } from "react";
+import Search from "./components/Search.jsx";
+import Spinner from "./components/Spinner.jsx";
+import MovieCard from "./components/MovieCard.jsx";
+import { useDebounce } from "react-use";
+import { getTrendingMovies, updateSearchCount } from "./appwrite.js";
+import PropTypes from "prop-types";
 
-import Search from './components/Search.jsx'
-import Spinner from './components/Spinner.jsx'
-import MovieCard from './components/MovieCard.jsx'
-import {
-  getTrendingMovies,
-  updateSearchCount,
-} from './appwrite.js'
-
-const API_BASE_URL = 'https://api.themoviedb.org/3'
-const API_KEY = import.meta.env.VITE_TMDB_API_KEY
+const API_BASE_URL = "https://api.themoviedb.org/3";
+const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
+const IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w342";
 
 const API_OPTIONS = {
-  method: 'GET',
+  method: "GET",
   headers: {
-    accept: 'application/json',
+    accept: "application/json",
     Authorization: `Bearer ${API_KEY}`,
   },
-}
+};
 
-const TrendingPoster = ({ movie, fallback = '🎬' }) => {
-  const [imageFailed, setImageFailed] = useState(false)
+const TrendingPoster = ({ movie }) => {
+  const [imageFailed, setImageFailed] = useState(false);
 
-  const poster =
-    movie.poster_url ||
-    movie.posterUrl ||
-    movie.poster_path ||
-    ''
+  const poster = movie.poster_url || movie.posterUrl || movie.poster_path || "";
 
-  const posterUrl =
-    typeof poster === 'string' && poster.trim()
-      ? poster.startsWith('http')
-        ? poster
-        : `https://image.tmdb.org/t/p/w342/${poster.replace(/^\/+/, '')}`
-      : ''
+  const posterUrl = poster
+    ? poster.startsWith("http")
+      ? poster
+      : `${IMAGE_BASE_URL}/${poster.replace(/^\/+/, "")}`
+    : "";
 
   if (!posterUrl || imageFailed) {
     return (
-      <div className="trend-poster-fallback" aria-hidden="true">
-        {fallback}
+      <div className="trend-poster-fallback" aria-label="Poster unavailable">
+        🎬
       </div>
-    )
+    );
   }
 
   return (
     <img
       className="trend-poster"
       src={posterUrl}
-      alt={movie.title || movie.searchTerm || 'Trending movie poster'}
+      alt={`${movie.title || "Movie"} poster`}
       loading="lazy"
       onError={() => setImageFailed(true)}
     />
-  )
-}
+  );
+};
 
 TrendingPoster.propTypes = {
   movie: PropTypes.shape({
@@ -63,110 +55,106 @@ TrendingPoster.propTypes = {
     posterUrl: PropTypes.string,
     poster_path: PropTypes.string,
     title: PropTypes.string,
-    searchTerm: PropTypes.string,
   }).isRequired,
-  fallback: PropTypes.string,
-}
+};
 
 const App = () => {
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [movieList, setMovieList] = useState([])
-  const [errorMessage, setErrorMessage] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [trendingMovies, setTrendingMovies] = useState([])
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+  const [movieList, setMovieList] = useState([]);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [trendingMovies, setTrendingMovies] = useState([]);
+  const [trendingLoading, setTrendingLoading] = useState(true);
 
   useDebounce(() => {
-    setDebouncedSearchTerm(searchTerm.trim())
-  }, 500, [searchTerm])
+    setDebouncedSearchTerm(searchTerm.trim());
+  }, 500, [searchTerm]);
 
-  const loadTrendingMovies = async () => {
+  const loadTrendingMovies = useCallback(async () => {
+    setTrendingLoading(true);
+
     try {
-      const movies = await getTrendingMovies()
-      setTrendingMovies(Array.isArray(movies) ? movies : [])
+      const movies = await getTrendingMovies();
+      setTrendingMovies(Array.isArray(movies) ? movies.slice(0, 5) : []);
     } catch (error) {
-      console.error('Error fetching trending movies:', error)
-      setTrendingMovies([])
+      console.error("Error fetching trending movies:", error);
+      setTrendingMovies([]);
+    } finally {
+      setTrendingLoading(false);
     }
-  }
+  }, []);
 
-  const fetchMovies = async (query = '') => {
-    if (!API_KEY) {
-      setErrorMessage(
-        'The TMDB API key is missing. Please check VITE_TMDB_API_KEY in your .env file.'
-      )
-      setMovieList([])
-      return
-    }
-
-    setIsLoading(true)
-    setErrorMessage('')
+  const fetchMovies = useCallback(async (query = "") => {
+    setIsLoading(true);
+    setErrorMessage("");
 
     try {
-      const endpoint = query
-        ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}`
-        : `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`
+      if (!API_KEY) {
+        throw new Error(
+          "TMDB API key is missing. Check VITE_TMDB_API_KEY in your .env file."
+        );
+      }
 
-      const response = await fetch(endpoint, API_OPTIONS)
+      const endpoint = query
+        ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}&include_adult=false`
+        : `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
+
+      const response = await fetch(endpoint, API_OPTIONS);
 
       if (!response.ok) {
-        throw new Error(`TMDB request failed with status ${response.status}`)
+        const details = await response.text();
+        console.error("TMDB response:", details);
+        throw new Error(`TMDB request failed (${response.status}).`);
       }
 
-      const data = await response.json()
-      const results = data.results || []
+      const data = await response.json();
+      const results = Array.isArray(data.results) ? data.results : [];
 
-      setMovieList(results)
+      setMovieList(results);
 
       if (query && results.length > 0) {
-        await updateSearchCount(query, results[0])
-        await loadTrendingMovies()
+        // Record the first matching movie for this search term.
+        await updateSearchCount(query, results[0]);
+
+        // Refresh Trending so new searches can appear immediately.
+        await loadTrendingMovies();
       }
     } catch (error) {
-      console.error('Error fetching movies:', error)
+      console.error("Error fetching movies:", error);
+
       setErrorMessage(
-        'We could not connect to the movie service. Please check your internet connection and try again.'
-      )
-      setMovieList([])
+        error.message?.includes("API key")
+          ? error.message
+          : "We could not load movies. Check your TMDB API key, connection, and browser console, then try again."
+      );
+
+      setMovieList([]);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  }, [loadTrendingMovies]);
 
   useEffect(() => {
-    fetchMovies(debouncedSearchTerm)
-  }, [debouncedSearchTerm])
-
-  useEffect(() => {
-    loadTrendingMovies()
-  }, [])
+    fetchMovies(debouncedSearchTerm);
+  }, [debouncedSearchTerm, fetchMovies]);
 
   const handleRetry = () => {
-    fetchMovies(debouncedSearchTerm)
-  }
-
-  const showDecorativeCards = trendingMovies.length === 0
+    fetchMovies(debouncedSearchTerm);
+  };
 
   const decorativeMovies = [
+    { id: "discover", title: "Popular Movies", label: "DISCOVER", icon: "🎬" },
+    { id: "favorites", title: "Fan Favorites", label: "EXPLORE", icon: "🍿" },
     {
-      id: 'discover',
-      title: 'Popular Movies',
-      label: 'DISCOVER',
-      icon: '🎬',
+      id: "next-watch",
+      title: "Movies to Discover",
+      label: "YOUR NEXT WATCH",
+      icon: "⭐",
     },
-    {
-      id: 'favorites',
-      title: 'Fan Favorites',
-      label: 'EXPLORE',
-      icon: '🍿',
-    },
-    {
-      id: 'next-watch',
-      title: 'Movies to Discover',
-      label: 'YOUR NEXT WATCH',
-      icon: '⭐',
-    },
-  ]
+  ];
+
+  const showDecorativeCards = trendingMovies.length === 0;
 
   return (
     <main className="app">
@@ -192,8 +180,8 @@ const App = () => {
             </h1>
 
             <p className="hero-description">
-              Explore popular films, search for timeless favorites,
-              and discover something new for your next movie night.
+              Explore popular films, search for timeless favorites, and
+              discover something new for your next movie night.
             </p>
 
             <Search
@@ -208,87 +196,85 @@ const App = () => {
           </div>
         </header>
 
-        <section className="trending">
+        <section className="trending" aria-labelledby="trending-heading">
           <div className="section-heading">
             <div>
-              <p className="section-kicker">
-                WHAT PEOPLE ARE SEARCHING
-              </p>
-              <h2>Trending Searches</h2>
+              <p className="section-kicker">WHAT PEOPLE ARE SEARCHING</p>
+              <h2 id="trending-heading">Trending Searches</h2>
             </div>
 
             <span className="section-tag">
-              {showDecorativeCards ? 'DISCOVER' : 'POPULAR'}
+              {trendingLoading
+                ? "LOADING"
+                : showDecorativeCards
+                  ? "DISCOVER"
+                  : "TOP 5"}
             </span>
           </div>
 
-          <ul>
-            {showDecorativeCards
-              ? decorativeMovies.map((movie, index) => (
-                  <li key={movie.id}>
+          {trendingLoading ? (
+            <div className="state-panel">
+              <p>Loading trending searches...</p>
+            </div>
+          ) : (
+            <ul>
+              {(showDecorativeCards ? decorativeMovies : trendingMovies).map(
+                (movie, index) => (
+                  <li
+                    key={
+                      movie.$id ||
+                      movie.id ||
+                      movie.movie_id ||
+                      `${movie.title}-${index}`
+                    }
+                  >
                     <span className="trend-number">
-                      {String(index + 1).padStart(2, '0')}
+                      {String(index + 1).padStart(2, "0")}
                     </span>
 
-                    <div
-                      className="trend-poster-fallback"
-                      aria-hidden="true"
-                    >
-                      {movie.icon}
-                    </div>
+                    {showDecorativeCards ? (
+                      <div className="trend-poster-fallback" aria-hidden="true">
+                        {movie.icon}
+                      </div>
+                    ) : (
+                      <TrendingPoster movie={movie} />
+                    )}
 
                     <div className="trend-info">
-                      <span>{movie.label}</span>
-                      <p title={movie.title}>{movie.title}</p>
+                      <span>
+                        {showDecorativeCards
+                          ? movie.label
+                          : `TRENDING · ${Number(movie.count || 0)} SEARCHES`}
+                      </span>
+                      <p title={movie.title || movie.searchTerm}>
+                        {movie.title || movie.searchTerm || "Untitled movie"}
+                      </p>
                     </div>
                   </li>
-                ))
-              : trendingMovies.map((movie, index) => {
-                  const title =
-                    movie.title ||
-                    movie.name ||
-                    movie.movie_title ||
-                    movie.searchTerm ||
-                    'Movie title unavailable'
-
-                  return (
-                    <li key={movie.$id || `${title}-${index}`}>
-                      <span className="trend-number">
-                        {String(index + 1).padStart(2, '0')}
-                      </span>
-
-                      <TrendingPoster movie={movie} />
-
-                      <div className="trend-info">
-                        <span>TRENDING</span>
-                        <p title={title}>{title}</p>
-                      </div>
-                    </li>
-                  )
-                })}
-          </ul>
+                )
+              )}
+            </ul>
+          )}
         </section>
 
-        <section className="all-movies">
+        <section className="all-movies" aria-labelledby="movies-heading">
           <div className="section-heading">
             <div>
               <p className="section-kicker">
                 {debouncedSearchTerm
-                  ? 'YOUR SEARCH RESULTS'
-                  : 'HANDPICKED FOR DISCOVERY'}
+                  ? "YOUR SEARCH RESULTS"
+                  : "HANDPICKED FOR DISCOVERY"}
               </p>
 
-              <h2>
+              <h2 id="movies-heading">
                 {debouncedSearchTerm
                   ? `Results for "${debouncedSearchTerm}"`
-                  : 'Explore Movies'}
+                  : "Explore Movies"}
               </h2>
             </div>
 
             {!isLoading && !errorMessage && movieList.length > 0 && (
-              <span className="result-count">
-                {movieList.length} titles
-              </span>
+              <span className="result-count">{movieList.length} titles</span>
             )}
           </div>
 
@@ -328,13 +314,11 @@ const App = () => {
         <footer className="app-footer">
           <span className="footer-brand">CineScope</span>
           <p>Made for people who love a good story.</p>
-          <p className="footer-credit">
-            Movie data provided by TMDB.
-          </p>
+          <p className="footer-credit">Movie data provided by TMDB.</p>
         </footer>
       </div>
     </main>
-  )
-}
+  );
+};
 
-export default App
+export default App;
