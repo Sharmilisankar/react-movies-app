@@ -1,3 +1,4 @@
+
 import { Client, TablesDB, ID, Query } from 'appwrite'
 
 const PROJECT_ID = import.meta.env.VITE_APPWRITE_PROJECT_ID
@@ -22,6 +23,16 @@ export const updateSearchCount = async (searchTerm, movie) => {
   try {
     validateConfig()
 
+    if (!searchTerm?.trim() || !movie?.id) {
+      console.warn('Cannot save trending search: search term or movie ID is missing.')
+      return
+    }
+
+    const title = movie.title || movie.name || searchTerm
+    const posterUrl = movie.poster_path
+      ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+      : ''
+
     const result = await tablesDB.listRows({
       databaseId: DATABASE_ID,
       tableId: TABLE_ID,
@@ -31,15 +42,24 @@ export const updateSearchCount = async (searchTerm, movie) => {
       ],
     })
 
+    const movieData = {
+      searchTerm,
+      title,
+      movie_id: movie.id,
+      poster_url: posterUrl,
+    }
+
     if (result.rows.length > 0) {
       const row = result.rows[0]
 
+      // Update older rows too, not just their search count.
       await tablesDB.updateRow({
         databaseId: DATABASE_ID,
         tableId: TABLE_ID,
         rowId: row.$id,
         data: {
-          count: row.count + 1,
+          ...movieData,
+          count: Number(row.count || 0) + 1,
         },
       })
     } else {
@@ -48,13 +68,8 @@ export const updateSearchCount = async (searchTerm, movie) => {
         tableId: TABLE_ID,
         rowId: ID.unique(),
         data: {
-          searchTerm: searchTerm,
-            title: movie.title,
+          ...movieData,
           count: 1,
-          movie_id: movie.id,
-          poster_url: movie.poster_path
-            ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-            : '',
         },
       })
     }
@@ -76,7 +91,7 @@ export const getTrendingMovies = async () => {
       ],
     })
 
-    return result.rows
+    return result.rows || []
   } catch (error) {
     console.error('Appwrite trending movies error:', error)
     return []

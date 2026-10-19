@@ -1,11 +1,15 @@
 
 import { useEffect, useState } from 'react'
+import PropTypes from 'prop-types'
+import { useDebounce } from 'react-use'
+
 import Search from './components/Search.jsx'
 import Spinner from './components/Spinner.jsx'
 import MovieCard from './components/MovieCard.jsx'
-import { useDebounce } from 'react-use'
-import { getTrendingMovies, updateSearchCount } from './appwrite.js'
-import PropTypes from 'prop-types'
+import {
+  getTrendingMovies,
+  updateSearchCount,
+} from './appwrite.js'
 
 const API_BASE_URL = 'https://api.themoviedb.org/3'
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY
@@ -18,12 +22,14 @@ const API_OPTIONS = {
   },
 }
 
-// Displays a trending poster when available, otherwise a decorative fallback.
 const TrendingPoster = ({ movie, fallback = '🎬' }) => {
   const [imageFailed, setImageFailed] = useState(false)
 
   const poster =
-    movie.poster_url || movie.posterUrl || movie.poster_path || ''
+    movie.poster_url ||
+    movie.posterUrl ||
+    movie.poster_path ||
+    ''
 
   const posterUrl =
     typeof poster === 'string' && poster.trim()
@@ -44,7 +50,7 @@ const TrendingPoster = ({ movie, fallback = '🎬' }) => {
     <img
       className="trend-poster"
       src={posterUrl}
-      alt={movie.title || 'Trending movie poster'}
+      alt={movie.title || movie.searchTerm || 'Trending movie poster'}
       loading="lazy"
       onError={() => setImageFailed(true)}
     />
@@ -57,12 +63,9 @@ TrendingPoster.propTypes = {
     posterUrl: PropTypes.string,
     poster_path: PropTypes.string,
     title: PropTypes.string,
+    searchTerm: PropTypes.string,
   }).isRequired,
   fallback: PropTypes.string,
-}
-
-TrendingPoster.defaultProps = {
-  fallback: '🎬',
 }
 
 const App = () => {
@@ -77,7 +80,25 @@ const App = () => {
     setDebouncedSearchTerm(searchTerm.trim())
   }, 500, [searchTerm])
 
+  const loadTrendingMovies = async () => {
+    try {
+      const movies = await getTrendingMovies()
+      setTrendingMovies(Array.isArray(movies) ? movies : [])
+    } catch (error) {
+      console.error('Error fetching trending movies:', error)
+      setTrendingMovies([])
+    }
+  }
+
   const fetchMovies = async (query = '') => {
+    if (!API_KEY) {
+      setErrorMessage(
+        'The TMDB API key is missing. Please check VITE_TMDB_API_KEY in your .env file.'
+      )
+      setMovieList([])
+      return
+    }
+
     setIsLoading(true)
     setErrorMessage('')
 
@@ -98,11 +119,8 @@ const App = () => {
       setMovieList(results)
 
       if (query && results.length > 0) {
-        try {
-          await updateSearchCount(query, results[0])
-        } catch (error) {
-          console.error('Error updating search count:', error)
-        }
+        await updateSearchCount(query, results[0])
+        await loadTrendingMovies()
       }
     } catch (error) {
       console.error('Error fetching movies:', error)
@@ -112,16 +130,6 @@ const App = () => {
       setMovieList([])
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const loadTrendingMovies = async () => {
-    try {
-      const movies = await getTrendingMovies()
-      setTrendingMovies(Array.isArray(movies) ? movies : [])
-    } catch (error) {
-      console.error('Error fetching trending movies:', error)
-      setTrendingMovies([])
     }
   }
 
@@ -137,8 +145,6 @@ const App = () => {
     fetchMovies(debouncedSearchTerm)
   }
 
-  // These three cards are UI-only placeholders.
-  // They appear whenever Appwrite has no trending records.
   const showDecorativeCards = trendingMovies.length === 0
 
   const decorativeMovies = [
@@ -202,7 +208,6 @@ const App = () => {
           </div>
         </header>
 
-        {/* Always show Trending Searches */}
         <section className="trending">
           <div className="section-heading">
             <div>
@@ -234,28 +239,33 @@ const App = () => {
 
                     <div className="trend-info">
                       <span>{movie.label}</span>
-                      <p title={movie.title || movie.name || movie.movie_title}>
-                        {movie.title || movie.name || movie.movie_title || 'Movie title unavailable'}
-                      </p>
+                      <p title={movie.title}>{movie.title}</p>
                     </div>
                   </li>
                 ))
-              : trendingMovies.map((movie, index) => (
-                  <li key={movie.$id || `${movie.title}-${index}`}>
-                    <span className="trend-number">
-                      {String(index + 1).padStart(2, '0')}
-                    </span>
+              : trendingMovies.map((movie, index) => {
+                  const title =
+                    movie.title ||
+                    movie.name ||
+                    movie.movie_title ||
+                    movie.searchTerm ||
+                    'Movie title unavailable'
 
-                    <TrendingPoster movie={movie} />
+                  return (
+                    <li key={movie.$id || `${title}-${index}`}>
+                      <span className="trend-number">
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
 
-                    <div className="trend-info">
-                      <span>TRENDING</span>
-                      <p title={movie.title}>
-                        {movie.title || 'Untitled movie'}
-                      </p>
-                    </div>
-                  </li>
-                ))}
+                      <TrendingPoster movie={movie} />
+
+                      <div className="trend-info">
+                        <span>TRENDING</span>
+                        <p title={title}>{title}</p>
+                      </div>
+                    </li>
+                  )
+                })}
           </ul>
         </section>
 
